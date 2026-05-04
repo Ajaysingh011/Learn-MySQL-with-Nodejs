@@ -1,0 +1,244 @@
+# Phase 5: Docker Compose - Complete Stack
+
+version: '3.8'
+
+# ====================================
+# Services Configuration
+# ====================================
+
+services:
+
+  # ====== Node.js Application ======
+  app:
+    # Build image from current directory Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # Container name
+    container_name: socialconnect-app
+
+    # Port mapping: host:container
+    ports:
+      - "3000:3000"
+
+    # Environment variables
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+
+      # Database
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASSWORD: password123
+      DB_NAME: socialconnect
+      DB_PORT: 3306
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # JWT
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      JWT_EXPIRY: 24h
+
+      # Logging
+      LOG_LEVEL: info
+
+    # Volume mapping: persist logs
+    volumes:
+      - ./logs:/app/logs
+
+    # Service dependencies
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+    # Network
+    networks:
+      - backend
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ====== MySQL Database ======
+  mysql:
+    # Use official MySQL image
+    image: mysql:8.0
+
+    # Container name
+    container_name: socialconnect-mysql
+
+    # Environment
+    environment:
+      # Root password
+      MYSQL_ROOT_PASSWORD: password123
+
+      # Database name
+      MYSQL_DATABASE: socialconnect
+
+      # MySQL configuration
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'false'
+
+    # Port mapping
+    ports:
+      - "3306:3306"
+
+    # Volume for persistent data
+    volumes:
+      # Data persistence
+      - mysql_data:/var/lib/mysql
+
+      # Initial setup scripts
+      - ./migrations/create-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./migrations/seed-data.sql:/docker-entrypoint-initdb.d/02-seed.sql (optional)
+
+      # Custom MySQL config
+      - ./docker/mysql.cnf:/etc/mysql/conf.d/mysql.cnf
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword123"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    # Network
+    networks:
+      - backend
+
+    # Restart policy
+    restart: unless-stopped
+
+  # ====== Redis Cache ======
+  redis:
+    # Use official Redis image
+    image: redis:7-alpine
+
+    # Container name
+    container_name: socialconnect-redis
+
+    # Port mapping
+    ports:
+      - "6379:6379"
+
+    # Volume for persistent data
+    volumes:
+      - redis_data:/data
+
+    # Command with configuration
+    command: redis-server --appendonly yes --requirepass password123
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+    # Network
+    networks:
+      - backend
+
+    # Restart policy
+    restart: unless-stopped
+
+  # ====== Optional: phpMyAdmin (Development Only) ======
+  phpmyadmin:
+    # Optional: For MySQL management UI
+    image: phpmyadmin:latest
+
+    # Only in development
+    profiles:
+      - dev
+
+    container_name: socialconnect-phpmyadmin
+
+    ports:
+      - "8080:80"
+
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: password123
+
+    depends_on:
+      - mysql
+
+    networks:
+      - backend
+
+    restart: unless-stopped
+
+# ====================================
+# Volumes (Persistent Data)
+# ====================================
+
+volumes:
+  # MySQL data
+  mysql_data:
+    driver: local
+
+  # Redis data
+  redis_data:
+    driver: local
+
+# ====================================
+# Networks
+# ====================================
+
+networks:
+  # Backend network (all services communicate)
+  backend:
+    driver: bridge
+
+# ====================================
+# Usage Commands
+# ====================================
+
+/**
+ * Start Services:
+ *   docker-compose up -d
+ *
+ * View Logs:
+ *   docker-compose logs -f app
+ *   docker-compose logs -f mysql
+ *   docker-compose logs -f redis
+ *
+ * Stop Services:
+ *   docker-compose stop
+ *
+ * Stop and Remove:
+ *   docker-compose down
+ *
+ * Remove with Volumes:
+ *   docker-compose down -v
+ *
+ * Rebuild Images:
+ *   docker-compose up -d --build
+ *
+ * Scale Services:
+ *   docker-compose up -d --scale app=3
+ *
+ * Access Services:
+ *   App: http://localhost:3000
+ *   MySQL: localhost:3306
+ *   Redis: localhost:6379
+ *   phpMyAdmin: http://localhost:8080 (dev profile)
+ *
+ * Development with Profile:
+ *   docker-compose --profile dev up -d
+ */
